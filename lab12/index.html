@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ToDo List</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 500px; margin: 40px auto; padding: 0 20px; }
+    .todo-input { display: flex; gap: 10px; margin-bottom: 20px; }
+    .todo-input input { flex: 1; padding: 8px; font-size: 16px; }
+    .todo-input button { padding: 8px 16px; cursor: pointer; }
+    .todo-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid #eee; }
+    .todo-item.completed span { text-decoration: line-through; color: gray; }
+    .todo-item button { margin-left: auto; padding: 4px 8px; cursor: pointer; color: red; }
+    .popup-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+    .popup-content { background: white; padding: 24px; border-radius: 8px; min-width: 300px; }
+    .popup-buttons { display: flex; gap: 10px; margin-top: 16px; justify-content: flex-end; }
+    .popup-buttons button { padding: 6px 16px; cursor: pointer; }
+    .error { color: red; font-size: 14px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="text/x-template" id="popup-template">
+    <Teleport to="body">
+      <div v-if="modelValue" class="popup-overlay" @click.self="$emit('update:modelValue', false)">
+        <div class="popup-content">
+          <slot></slot>
+        </div>
+      </div>
+    </Teleport>
+  </script>
+
+  <script type="text/x-template" id="app-template">
+    <div>
+      <h1>ToDo List</h1>
+      <div class="todo-input">
+        <input v-model="newTaskTitle" @keyup.enter="addTask" placeholder="Новая задача" />
+        <button @click="addTask" :disabled="loading">Добавить</button>
+      </div>
+      <div v-if="error" class="error">{{ error }}</div>
+      <div v-for="task in tasks" :key="task.id" class="todo-item" :class="{ completed: task.completed }">
+        <input type="checkbox" :checked="task.completed" @change="toggleTask(task)" :disabled="loading" />
+        <span>{{ task.title }}</span>
+        <button @click="confirmDelete(task)" :disabled="loading">Удалить</button>
+      </div>
+      <Popup v-model="showDeletePopup">
+        <p>Удалить задачу "{{ taskToDelete?.title }}"?</p>
+        <div class="popup-buttons">
+          <button @click="showDeletePopup = false">Отмена</button>
+          <button @click="deleteTask">Удалить</button>
+        </div>
+      </Popup>
+    </div>
+  </script>
+
+  <script>
+    const { ref, onMounted, createApp, defineComponent } = Vue;
+
+    const API_URL = 'https://jsonplaceholder.typicode.com/todos';
+    const USER_ID = 1;
+    const STORAGE_KEY = 'todo-tasks';
+    const REQUEST_TIMEOUT = 3000;
+
+    const Popup = defineComponent({
+      template: '#popup-template',
+      props: { modelValue: Boolean },
+      emits: ['update:modelValue']
+    });
+
+    function fetchWithTimeout(url, options = {}) {
+      return new Promise((resolve, reject) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+        fetch(url, { ...options, signal: controller.signal })
+          .then(response => { clearTimeout(timeoutId); resolve(response); })
+          .catch(err => { clearTimeout(timeoutId); reject(err); });
+      });
+    }
+
+    const App = defineComponent({
+      template: '#app-template',
+      components: { Popup },
+      setup() {
+        const tasks = ref([]);
+        const newTaskTitle = ref('');
+        const showDeletePopup = ref(false);
+        const taskToDelete = ref(null);
+        const loading = ref(false);
+        const error = ref('');
+        let localIdCounter = Date.now();
+
+        function saveToStorage() {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks.value));
+        }
+
+        function loadFromStorage() {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) tasks.value = JSON.parse(saved);
+        }
+
+        async function addTask() {
+          if (!newTaskTitle.value.trim() || loading.value) return;
+          loading.value = true;
+          error.value = '';
+          try {
+            const res = await fetchWithTimeout(API_URL, {
+              method: 'POST',
+              body: JSON.stringify({ title: newTaskTitle.value, completed: false, userId: USER_ID }),
+              headers: { 'Content-type': 'application/json' }
+            });
+            if (res.ok) {
+              const data = await res.json();
+              tasks.value.push({ id: localIdCounter++, serverId: data.id, title: newTaskTitle.value, completed: false });
+              newTaskTitle.value = '';
+              saveToStorage();
+            }
+          } catch(e) {
+            error.value = 'Ошибка API при добавлении';
+          }
+          loading.value = false;
+        }
+
+        async function toggleTask(task) {
+          if (loading.value) return;
+          loading.value = true;
+          error.value = '';
+          try {
+            const res = await fetchWithTimeout(`${API_URL}/${task.serverId || task.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ completed: !task.completed }),
+              headers: { 'Content-type': 'application/json' }
+            });
+            if (res.ok) {
+              task.completed = !task.completed;
+              saveToStorage();
+            }
+          } catch(e) {
+            error.value = 'Ошибка API при изменении';
+          }
+          loading.value = false;
+        }
+
+        function confirmDelete(task) {
+          taskToDelete.value = task;
+          showDeletePopup.value = true;
+        }
+
+        async function deleteTask() {
+          const task = taskToDelete.value;
+          showDeletePopup.value = false;
+          taskToDelete.value = null;
+          loading.value = true;
+          error.value = '';
+          try {
+            const res = await fetchWithTimeout(`${API_URL}/${task.serverId || task.id}`, { method: 'DELETE' });
+            if (res.ok) {
+              tasks.value = tasks.value.filter(t => t.id !== task.id);
+              saveToStorage();
+            }
+          } catch(e) {
+            error.value = 'Ошибка API при удалении';
+          }
+          loading.value = false;
+        }
+
+        onMounted(() => loadFromStorage());
+
+        return { tasks, newTaskTitle, showDeletePopup, taskToDelete, loading, error, addTask, toggleTask, confirmDelete, deleteTask };
+      }
+    });
+
+    createApp(App).mount('#app');
+  </script>
+</body>
+</html>

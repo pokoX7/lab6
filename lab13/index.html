@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Форма регистрации</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/vee-validate@4/dist/vee-validate.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 400px; margin: 40px auto; padding: 20px; }
+    .form-group { margin-bottom: 20px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    input[type="email"], input[type="password"] { width: 100%; padding: 8px; box-sizing: border-box; border: 2px solid transparent; outline: none; border-radius: 4px; font-size: 16px; }
+    input.valid { border-color: green; }
+    input.invalid { border-color: red; }
+    .checkbox-group { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+    button { width: 100%; padding: 10px; font-size: 16px; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: 0.6; }
+    .criteria { list-style: none; padding: 0; margin: 10px 0 0 0; }
+    .criteria li { font-size: 14px; }
+    .criteria li.passed { color: green; }
+    .criteria li.failed { color: red; }
+    .error-message { color: red; font-size: 12px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="text/x-template" id="form-template">
+    <form @submit.prevent="onSubmit">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" v-model="email" @blur="validateEmail" :class="emailClass" placeholder="Введите email" />
+        <div class="error-message">{{ errors.email }}</div>
+      </div>
+      <div class="form-group">
+        <label>Пароль</label>
+        <input type="password" v-model="password" @input="validatePassword" :class="passwordClass" placeholder="Введите пароль" />
+        <div class="error-message">{{ errors.password }}</div>
+        <ul class="criteria">
+          <li :class="passwordChecks.length ? 'passed' : (password.length > 0 ? 'failed' : '')">Длина не менее 8</li>
+          <li :class="passwordChecks.hasDigit ? 'passed' : (password.length > 0 ? 'failed' : '')">Цифры</li>
+          <li :class="passwordChecks.hasLower ? 'passed' : (password.length > 0 ? 'failed' : '')">Буквы нижнего регистра</li>
+          <li :class="passwordChecks.hasUpper ? 'passed' : (password.length > 0 ? 'failed' : '')">Буквы верхнего регистра</li>
+          <li :class="passwordChecks.hasSpecial ? 'passed' : (password.length > 0 ? 'failed' : '')">Спецсимволы</li>
+        </ul>
+      </div>
+      <div class="checkbox-group">
+        <input type="checkbox" v-model="agreed" id="agree" />
+        <label for="agree">I agree with license agreement</label>
+      </div>
+      <button type="submit" :disabled="!isFormValid">Зарегистрироваться</button>
+    </form>
+  </script>
+
+  <script>
+    const { ref, computed, createApp } = Vue;
+
+    const app = createApp({
+      template: '#form-template',
+      setup() {
+        const email = ref('');
+        const password = ref('');
+        const agreed = ref(false);
+        const errors = ref({ email: '', password: '' });
+        const emailTouched = ref(false);
+
+        const emailValid = computed(() => {
+          const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          return re.test(email.value);
+        });
+
+        const passwordChecks = computed(() => {
+          return {
+            length: password.value.length >= 8,
+            hasDigit: /\d/.test(password.value),
+            hasLower: /[a-z]/.test(password.value),
+            hasUpper: /[A-Z]/.test(password.value),
+            hasSpecial: /[!@#$%^&*(),.?":{}|<>]/.test(password.value)
+          };
+        });
+
+        const passwordValid = computed(() => {
+          const c = passwordChecks.value;
+          return c.length && c.hasDigit && c.hasLower && c.hasUpper && c.hasSpecial;
+        });
+
+        const isFormValid = computed(() => {
+          return emailValid.value && passwordValid.value && agreed.value;
+        });
+
+        const emailClass = computed(() => {
+          if (!emailTouched.value && !email.value) return '';
+          return emailValid.value ? 'valid' : 'invalid';
+        });
+
+        const passwordClass = computed(() => {
+          if (!password.value) return '';
+          return passwordValid.value ? 'valid' : 'invalid';
+        });
+
+        function validateEmail() {
+          emailTouched.value = true;
+          if (!emailValid.value && email.value) {
+            errors.value.email = 'Введите корректный email';
+          } else {
+            errors.value.email = '';
+          }
+        }
+
+        function validatePassword() {
+          if (!passwordValid.value && password.value) {
+            errors.value.password = 'Пароль не соответствует требованиям';
+          } else {
+            errors.value.password = '';
+          }
+        }
+
+        function onSubmit() {
+          alert('Регистрация успешна!');
+        }
+
+        return { email, password, agreed, errors, emailClass, passwordClass, passwordChecks, isFormValid, validateEmail, validatePassword, onSubmit };
+      }
+    });
+
+    app.mount('#app');
+  </script>
+</body>
+</html>

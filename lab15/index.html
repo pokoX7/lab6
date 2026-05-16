@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TodoList с Pinia</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://unpkg.com/vue-router@4/dist/vue-router.global.js"></script>
+  <script src="https://unpkg.com/vue-demi@0.14.10/lib/index.iife.js"></script>
+  <script src="https://unpkg.com/pinia@2/dist/pinia.iife.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+    nav { margin-bottom: 20px; }
+    nav a { margin-right: 15px; color: blue; }
+    .todo-item { display: flex; align-items: center; gap: 10px; padding: 10px; border-bottom: 1px solid #eee; }
+    .todo-item.completed span { text-decoration: line-through; color: gray; }
+    .todo-item a { color: blue; text-decoration: none; background: none; border: none; cursor: pointer; font-size: 14px; padding: 0; }
+    .todo-input { display: flex; gap: 10px; margin-bottom: 20px; }
+    .todo-input input { flex: 1; padding: 8px; font-size: 16px; }
+    .todo-input button { padding: 8px 16px; cursor: pointer; }
+    .message { background: #d4edda; padding: 10px; border-radius: 4px; margin-bottom: 20px; }
+    .actions { display: flex; gap: 10px; margin-left: auto; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <nav>
+      <router-link to="/">Список задач</router-link>
+      <router-link to="/add">Добавить задачу</router-link>
+      <router-link to="/about">О нас</router-link>
+    </nav>
+    <router-view></router-view>
+  </div>
+
+  <script type="text/x-template" id="task-list-template">
+    <div>
+      <h1>Список задач</h1>
+      <div v-if="store.tasks.length === 0">Задач пока нет</div>
+      <div v-for="task in store.tasks" :key="task.id" class="todo-item" :class="{ completed: task.completed }">
+        <span>{{ task.title }}</span>
+        <div class="actions">
+          <router-link :to="'/task/' + task.id">Подробнее</router-link>
+          <router-link :to="'/task/' + task.id + '/complete'">Сменить статус</router-link>
+          <router-link :to="'/task/' + task.id + '/delete'">Удалить</router-link>
+        </div>
+      </div>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="add-task-template">
+    <div>
+      <h1>Добавить задачу</h1>
+      <div class="todo-input">
+        <input v-model="newTaskTitle" @keyup.enter="addTask" placeholder="Новая задача" />
+        <button @click="addTask">Добавить</button>
+      </div>
+      <router-link to="/">Назад к списку</router-link>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="task-detail-template">
+    <div>
+      <h1>Задача #{{ task.id }}</h1>
+      <p><strong>Название:</strong> {{ task.title }}</p>
+      <p><strong>Статус:</strong> {{ task.completed ? 'Выполнена' : 'Не выполнена' }}</p>
+      <div style="display: flex; gap: 10px;">
+        <router-link :to="'/task/' + task.id + '/complete'">Сменить статус</router-link>
+        <router-link :to="'/task/' + task.id + '/delete'">Удалить</router-link>
+      </div>
+      <br>
+      <router-link to="/">Назад к списку</router-link>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="task-delete-template">
+    <div>
+      <div class="message">Task deleted</div>
+      <router-link to="/">Назад к списку</router-link>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="task-complete-template">
+    <div>
+      <div class="message">Task status has been changed</div>
+      <router-link to="/">Назад к списку</router-link>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="about-template">
+    <div>
+      <h1>О нас</h1>
+      <p>Это TodoList приложение с маршрутизацией и Pinia.</p>
+    </div>
+  </script>
+
+  <script>
+    const { ref, createApp } = Vue;
+    const { createRouter, createWebHashHistory } = VueRouter;
+    const { createPinia, defineStore } = Pinia;
+
+    // Pinia Store
+    const useTodoStore = defineStore('todo', {
+      state: () => ({
+        tasks: JSON.parse(localStorage.getItem('pinia-todo-tasks') || '[]')
+      }),
+      actions: {
+        addTask(title) {
+          const id = this.tasks.length > 0 ? Math.max(...this.tasks.map(t => t.id)) + 1 : 1;
+          this.tasks.push({ id, title, completed: false });
+          this.saveToStorage();
+        },
+        deleteTask(id) {
+          this.tasks = this.tasks.filter(t => t.id !== id);
+          this.saveToStorage();
+        },
+        toggleTask(id) {
+          const task = this.tasks.find(t => t.id === id);
+          if (task) {
+            task.completed = !task.completed;
+            this.saveToStorage();
+          }
+        },
+        saveToStorage() {
+          localStorage.setItem('pinia-todo-tasks', JSON.stringify(this.tasks));
+        }
+      }
+    });
+
+    const router = createRouter({
+      history: createWebHashHistory(),
+      routes: [
+        { 
+          path: '/', 
+          component: { 
+            template: '#task-list-template', 
+            setup() { 
+              const store = useTodoStore(); 
+              return { store }; 
+            } 
+          } 
+        },
+        { 
+          path: '/add', 
+          component: {
+            template: '#add-task-template',
+            setup() {
+              const store = useTodoStore();
+              const newTaskTitle = ref('');
+              function addTask() {
+                if (!newTaskTitle.value.trim()) return;
+                store.addTask(newTaskTitle.value);
+                newTaskTitle.value = '';
+              }
+              return { newTaskTitle, addTask };
+            }
+          }
+        },
+        { 
+          path: '/task/:id', 
+          component: {
+            template: '#task-detail-template',
+            setup() {
+              const route = VueRouter.useRoute();
+              const store = useTodoStore();
+              const task = store.tasks.find(t => t.id === parseInt(route.params.id)) || { id: route.params.id, title: 'Не найдена', completed: false };
+              return { task };
+            }
+          }
+        },
+        { 
+          path: '/task/:id/delete', 
+          component: {
+            template: '#task-delete-template',
+            setup() {
+              const route = VueRouter.useRoute();
+              const store = useTodoStore();
+              store.deleteTask(parseInt(route.params.id));
+              return {};
+            }
+          }
+        },
+        { 
+          path: '/task/:id/complete', 
+          component: {
+            template: '#task-complete-template',
+            setup() {
+              const route = VueRouter.useRoute();
+              const store = useTodoStore();
+              store.toggleTask(parseInt(route.params.id));
+              return {};
+            }
+          }
+        },
+        { 
+          path: '/about', 
+          component: { template: '#about-template' } 
+        }
+      ]
+    });
+
+    const app = createApp({});
+    const pinia = createPinia();
+    app.use(pinia);
+    app.use(router);
+    app.mount('#app');
+  </script>
+</body>
+</html>
